@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Codex2API Playground</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="glow glow-a"></div><div class="glow glow-b"></div>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">CODEX · OPENAI COMPATIBLE API</p>
+        <h1>把想法交给 Codex，<br><span>从文字到图像。</span></h1>
+        <p class="intro">一个本地运行的 API 体验台。所有请求都通过当前机器上的 Codex CLI 完成。</p>
+      </div>
+      <div class="status-card">
+        <span id="statusDot" class="dot"></span>
+        <div><strong id="statusText">正在连接</strong><small>localhost:3010</small></div>
+      </div>
+    </header>
+
+    <section class="settings card">
+      <label>API Key（如已启用）<input id="apiKey" type="password" placeholder="可留空"></label>
+      <label>模型<input id="model" value="codex" placeholder="codex 或具体模型名"></label>
+      <button id="loadModels" class="secondary">查看模型</button>
+      <span id="modelResult" class="muted"></span>
+    </section>
+
+    <nav class="tabs" aria-label="功能选择">
+      <button class="tab active" data-tab="chat">文生文</button>
+      <button class="tab" data-tab="generate">文生图</button>
+      <button class="tab" data-tab="edit">图生图</button>
+      <button class="tab" data-tab="analyze">图生文</button>
+    </nav>
+
+    <section id="chat" class="panel active">
+      <div class="card workspace">
+        <div class="card-head"><div><span class="number">01</span><h2>文本对话</h2></div><label class="switch"><input id="stream" type="checkbox" checked><span></span>流式响应</label></div>
+        <div id="conversation" class="conversation"><div class="empty">试着问一个问题，结果会显示在这里。</div></div>
+        <form id="chatForm" class="composer">
+          <textarea id="chatPrompt" required placeholder="例如：用三句话解释什么是量子纠缠" rows="3">用三句话解释什么是量子纠缠，并给一个生活中的类比。</textarea>
+          <button type="submit">发送 <span>↗</span></button>
+        </form>
+      </div>
+    </section>
+    <section id="analyze" class="panel">
+      <div class="card workspace">
+        <div class="card-head"><div><span class="number">04</span><h2>图像理解</h2></div><span class="badge">VISION</span></div>
+        <form id="analyzeForm" class="image-form">
+          <label class="upload wide"><input id="analyzeImage" name="image" type="file" accept="image/*" required><span id="analyzeUploadText">拖入或点击选择一张图片</span><img id="analyzePreview" hidden alt="待分析图片预览"></label>
+          <label class="wide">分析要求<textarea id="analyzePrompt" required rows="4">请详细描述这张图片，包括主体、环境、色彩、构图和可能表达的氛围；如果图片中有文字，也请识别出来。</textarea></label>
+          <button type="submit" class="wide">分析图片 <span>◎</span></button>
+        </form>
+        <div id="analyzeResult" class="conversation"><div class="empty">图片分析结果将在这里出现。</div></div>
+      </div>
+    </section>
+
+    <section id="generate" class="panel">
+      <div class="card workspace">
+        <div class="card-head"><div><span class="number">02</span><h2>文生图</h2></div><span class="badge">IMAGE</span></div>
+        <form id="generateForm" class="image-form">
+          <label class="wide">画面描述<textarea id="imagePrompt" required rows="5" placeholder="例如：雨夜的上海街头，霓虹灯倒映在湿润路面，电影感">雨夜的上海街头，霓虹灯倒映在湿润路面，远处有一辆复古出租车，电影感，细节丰富。</textarea></label>
+          <label>尺寸<select id="imageSize"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option></select></label>
+          <label>返回格式<select id="imageFormat"><option value="url">URL</option><option value="b64_json">Base64</option></select></label>
+          <button type="submit" class="wide">生成图片 <span>✦</span></button>
+        </form>
+        <div id="generateResult" class="image-result"><div class="empty">生成的图片将在这里出现。</div></div>
+      </div>
+    </section>
+
+    <section id="edit" class="panel">
+      <div class="card workspace">
+        <div class="card-head"><div><span class="number">03</span><h2>图生图</h2></div><span class="badge">EDIT</span></div>
+        <form id="editForm" class="image-form">
+          <label class="upload wide" id="dropZone"><input id="sourceImage" name="image" type="file" accept="image/*" required><span id="uploadText">拖入或点击选择一张图片</span><img id="preview" hidden alt="待编辑图片预览"></label>
+          <label class="wide">修改要求<textarea id="editPrompt" required rows="4" placeholder="例如：保留构图，改成柔和的水彩插画风格">保留原图的主体和构图，转换成柔和细腻的水彩插画风格。</textarea></label>
+          <button type="submit" class="wide">开始转换 <span>✦</span></button>
+        </form>
+        <div id="editResult" class="image-result"><div class="empty">转换后的图片将在这里出现。</div></div>
+      </div>
+    </section>
+  </main>
+  <div id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
