@@ -67,14 +67,14 @@ app.post('/v1/images/generations', async (req, res, next) => {
   try { res.json(await createImages({ ...req.body, images: [] })); } catch (error) { next(error); }
 });
 
-app.post('/v1/images/edits', upload.fields([{ name: 'image', maxCount: 10 }, { name: 'mask', maxCount: 1 }]), async (req, res, next) => {
+app.post('/v1/images/edits', upload.fields([{ name: 'image', maxCount: 16 }, { name: 'mask', maxCount: 1 }]), async (req, res, next) => {
   try {
     const images = [...(req.files?.image || []), ...(req.files?.mask || [])].map((f) => path.resolve(f.path));
     res.json(await createImages({ ...req.body, images }));
   } catch (error) { next(error); }
 });
 
-app.post('/v1/images/analyze', upload.array('image', 10), async (req, res, next) => {
+app.post('/v1/images/analyze', upload.array('image', 16), async (req, res, next) => {
   try {
     const images = (req.files || []).map((file) => path.resolve(file.path));
     if (!images.length) return res.status(400).json(openAIError('At least one image is required', 'invalid_request_error'));
