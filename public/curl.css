@@ -1,0 +1,5 @@
+.curl-example{margin-top:24px;border-top:1px solid var(--line);padding-top:20px}
+.curl-example summary{cursor:pointer;font-weight:700;color:var(--green);padding:6px 0}
+.curl-example pre{margin:14px 0;padding:18px;border-radius:14px;background:#17201d;color:#e4eee8;overflow:auto;max-height:340px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.65}
+.curl-example code{font-family:Consolas,monospace}
+.curl-example .muted{line-height:1.6}

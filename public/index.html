@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Codex2API Playground</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/curl.css">
 </head>
 <body>
   <div class="glow glow-a"></div><div class="glow glow-b"></div>
@@ -23,10 +24,11 @@
 
     <section class="settings card">
       <label>API Key（如已启用）<input id="apiKey" type="password" placeholder="可留空"></label>
-      <label>模型<input id="model" value="codex" placeholder="codex 或具体模型名"></label>
-      <button id="loadModels" class="secondary">查看模型</button>
-      <span id="modelResult" class="muted"></span>
+      <label>模型<select id="model"><option value="codex">服务默认模型</option></select></label>
+      <label>推理强度（文生文）<select id="reasoningEffort"><option value="">模型默认</option></select></label>
+      <button id="loadModels" class="secondary">刷新模型</button>
     </section>
+    <p id="modelResult" class="muted" aria-live="polite"></p>
 
     <nav class="tabs" aria-label="功能选择">
       <button class="tab active" data-tab="chat">文生文</button>

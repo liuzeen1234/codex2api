@@ -46,7 +46,7 @@ When `stream` is true:
 - If a data record contains `error`, surface its `message` and stop the request.
 - Support cancellation through the client framework's abort mechanism.
 
-The current server invokes `codex exec`, which emits the completed assistant answer rather than upstream token deltas. The server then sends that answer as multiple SSE deltas. Therefore, a pause before the first delta is expected and client-side timeout limits must allow for model execution.
+The chat endpoint uses a persistent Codex app-server process and forwards native `item/agentMessage/delta` notifications. A pause before the first delta can still occur while the model reasons or invokes tools, so client-side timeout limits must allow for agent execution.
 
 ## Implement image operations
 
@@ -55,7 +55,9 @@ For text-to-image, send JSON. Handle both response formats:
 - `url`: display or download `data[].url`. Treat returned URLs as deployment-dependent and potentially temporary.
 - `b64_json`: decode `data[].b64_json` using the image MIME type expected by the client; the current service produces PNG results.
 
-For image editing and image analysis, send `multipart/form-data` and let the HTTP library generate the multipart boundary. Use `image` as the upload field name. The service accepts up to 10 image files with a per-file limit of 25 MiB. Image editing may also include a `mask` file.
+For Chat Completions vision input, use OpenAI-style `image_url` content with an inline `data:image/...;base64,...` URL. Remote HTTP image URLs are rejected to prevent SSRF.
+
+For image editing and image analysis, send `multipart/form-data` and let the HTTP library generate the multipart boundary. Use `image` as the upload field name. The service accepts up to 16 image files with a per-file limit of 25 MiB. Image editing may also include a `mask` file.
 
 Read image-analysis text from the top-level `text` field. The same value is also available as `data[0].text` for clients that prefer a data-array shape.
 

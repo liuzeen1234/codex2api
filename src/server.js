@@ -3,13 +3,17 @@ import multer from 'multer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { config } from './config.js';
 import { runCodex } from './codex.js';
+import { appServer } from './app-server.js';
+import { usesExternalTools, toResponses, runExternalChat } from './external-tools.js';
 
 await fs.mkdir(path.join(config.dataDir, 'uploads'), { recursive: true });
 await fs.mkdir(path.join(config.dataDir, 'jobs'), { recursive: true });
 const upload = multer({ dest: path.join(config.dataDir, 'uploads'), limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
-const app = express();
+export const app = express();
+app.locals.runExternalChat = runExternalChat;
 app.use(express.json({ limit: '30mb' }));
 app.use(express.static(path.resolve('public')));
 app.use('/files', express.static(path.join(config.dataDir, 'jobs')));
@@ -19,38 +23,78 @@ app.use((req, res, next) => {
   res.status(401).json(openAIError('Invalid API key', 'authentication_error'));
 });
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
-app.get('/v1/models', (_req, res) => res.json({ object: 'list', data: [{ id: config.codexModel || 'codex', object: 'model', created: 0, owned_by: 'codex' }] }));
+app.get('/health', async (_req, res) => {
+  try {
+    if (config.appServerEnabled) await appServer.start();
+    res.json({ status: 'ok', codex_app_server: config.appServerEnabled ? 'ready' : 'disabled' });
+  } catch (error) {
+    res.status(503).json({ status: 'error', codex_app_server: 'unavailable', error: error.message });
+  }
+});
+app.get('/v1/models', async (_req, res, next) => {
+  try {
+    if (!config.appServerEnabled) return res.json({ object: 'list', data: [{ id: config.codexModel || 'codex', object: 'model', created: 0, owned_by: 'codex' }] });
+    const models = await appServer.listModels();
+    res.json({ object: 'list', data: models.map((item) => ({ id: item.model || item.id, object: 'model', created: 0, owned_by: 'codex', name: item.displayName, description: item.description, reasoning_efforts: item.supportedReasoningEfforts, input_modalities: item.inputModalities })) });
+  } catch (error) { next(error); }
+});
 
 app.post('/v1/chat/completions', async (req, res, next) => {
   try {
     const { messages = [], model, stream = false } = req.body;
-    const prompt = messagesToPrompt(messages);
     const id = `chatcmpl-${crypto.randomUUID()}`;
+    const created = unix();
+    const selectedModel = model || config.codexModel || 'codex';
+    const external = usesExternalTools(req.body);
+    const payload = external ? toResponses(req.body) : null;
+    const run = (options = {}) => external ? app.locals.runExternalChat({ payload, ...options }) : config.appServerEnabled
+      ? appServer.runChat({
+          messages,
+          model,
+          reasoningEffort: req.body.reasoning_effort || req.body.reasoning?.effort,
+          responseFormat: req.body.response_format,
+          metadata: req.body.metadata,
+          ...options,
+        })
+      : runCodex({ prompt: messagesToPrompt(messages), model, onText: options.onDelta });
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders();
+      const controller = new AbortController();
+      let finished = false;
+      req.on('aborted', () => controller.abort());
+      res.on('close', () => { if (!finished) controller.abort(); });
       try {
-        const result = await runCodex({ prompt, model });
-        const chunk = { id, object: 'chat.completion.chunk', created: unix(), model: model || 'codex', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] };
+        const chunk = { id, object: 'chat.completion.chunk', created, model: selectedModel, choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] };
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-        for (const content of splitText(result.text)) {
-          if (res.destroyed) break;
+        const result = await run({ signal: controller.signal, onDelta: (content) => {
+          if (!content || res.destroyed) return;
           res.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`);
-          await delay(18);
-        }
-        res.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);
+        }, onToolDelta: (call) => {
+          if (!res.destroyed) res.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { tool_calls: [call] }, finish_reason: null }] })}\n\n`);
+        } });
+        res.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: result.toolCalls?.length ? 'tool_calls' : 'stop' }] })}\n\n`);
+        if (req.body.stream_options?.include_usage) res.write(`data: ${JSON.stringify({ ...chunk, choices: [], usage: result.usage })}\n\n`);
+        finished = true;
         res.end('data: [DONE]\n\n');
       } catch (error) {
-        console.error(error);
+        console.error('Chat stream failed', { status: error.status || 500 });
+        finished = true;
         res.write(`data: ${JSON.stringify({ error: { message: error.message, type: 'server_error' } })}\n\n`);
         res.end('data: [DONE]\n\n');
       }
       return;
     }
-    const result = await runCodex({ prompt, model });
-    res.json({ id, object: 'chat.completion', created: unix(), model: model || 'codex', choices: [{ index: 0, message: { role: 'assistant', content: result.text }, finish_reason: 'stop' }], usage: null });
+    const controller = new AbortController();
+    let finished = false;
+    req.on('aborted', () => controller.abort());
+    res.on('close', () => { if (!finished) controller.abort(); });
+    const result = await run({ signal: controller.signal });
+    finished = true;
+    res.json({ id, object: 'chat.completion', created, model: selectedModel, choices: [{ index: 0, message: { role: 'assistant', content: result.text || (result.toolCalls?.length ? null : ''), ...(result.toolCalls?.length ? { tool_calls: result.toolCalls } : {}) }, finish_reason: result.toolCalls?.length ? 'tool_calls' : 'stop' }], usage: result.usage, codex: external ? { backend: 'responses-external-tools' } : { thread_id: result.threadId, turn_id: result.turnId, reasoning_summary: result.reasoning || undefined } });
   } catch (error) { next(error); }
 });
 
@@ -100,15 +144,19 @@ function messagesToPrompt(messages) {
   }).join('\n\n');
 }
 function unix() { return Math.floor(Date.now() / 1000); }
-function splitText(value, size = 3) {
-  const characters = Array.from(value || '');
-  return Array.from({ length: Math.ceil(characters.length / size) }, (_, index) => characters.slice(index * size, index * size + size).join(''));
-}
-function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function openAIError(message, type = 'server_error') { return { error: { message, type, param: null, code: null } }; }
 app.use((error, _req, res, _next) => {
-  console.error(error);
+  console.error('HTTP request failed', { status: error.status || 500 });
   if (res.headersSent) return res.end();
-  res.status(error instanceof multer.MulterError ? 400 : 500).json(openAIError(error.message));
+  const status = error.status || (error instanceof multer.MulterError ? 400 : 500);
+  res.status(status).json(openAIError(error.message, status === 400 ? 'invalid_request_error' : 'server_error'));
 });
-app.listen(config.port, () => console.log(`codex2api listening on http://localhost:${config.port}`));
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  if (config.appServerEnabled) await appServer.start();
+  const httpServer = app.listen(config.port, () => console.log(`codex2api listening on http://localhost:${config.port} (chat backend: ${config.appServerEnabled ? 'app-server' : 'exec'}; tools: responses)`));
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
+    httpServer.close();
+    await appServer.close();
+    process.exit(0);
+  });
+}
